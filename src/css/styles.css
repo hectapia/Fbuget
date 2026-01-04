@@ -1,0 +1,26 @@
+/* src/css/styles.css */
+body {
+    background-color: #121212;
+    color: #e0e0e0;
+    padding-bottom: 80px; /* Space for scrolling on mobile */
+}
+
+/* Make cards touch-friendly */
+.project-card {
+    cursor: pointer;
+    transition: transform 0.1s;
+}
+.project-card:active {
+    transform: scale(0.98);
+}
+
+.view-section { display: none; }
+.active-section { display: block; animation: fadeIn 0.3s; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* Chart Container for Mobile */
+.chart-container {
+    position: relative;
+    height: 220px;
+    width: 100%;
+}

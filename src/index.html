@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Fbudget</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="css/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="p-3">
+
+    <nav class="navbar navbar-dark bg-dark rounded mb-3 px-3">
+        <span class="navbar-brand mb-0 h1"><i class="bi bi-wallet2 text-success"></i> Fbudget</span>
+    </nav>
+
+    <div id="view-dashboard" class="view-section active-section">
+        <div class="d-flex justify-content-between mb-3 align-items-center">
+            <h4 class="mb-0">Projects</h4>
+            <button class="btn btn-sm btn-success" onclick="toggleAddForm()">+ New</button>
+        </div>
+
+        <div id="add-form-card" class="card mb-3 p-3 d-none border-success">
+            <input type="text" id="in-name" class="form-control mb-2" placeholder="Project Name">
+            <input type="text" id="in-client" class="form-control mb-2" placeholder="Client">
+            <div class="row g-2 mb-2">
+                <div class="col-6">
+                    <select id="in-status" class="form-select"><option>Active</option><option>Planning</option><option>Done</option></select>
+                </div>
+                <div class="col-6">
+                    <input type="number" id="in-budget" class="form-control" placeholder="Budget">
+                </div>
+            </div>
+            <button class="btn btn-success w-100" onclick="addProject()">Save Project</button>
+        </div>
+
+        <div id="project-list" class="row g-3"></div>
+    </div>
+
+    <div id="view-details" class="view-section">
+        <button class="btn btn-outline-secondary mb-3 btn-sm" onclick="showDashboard()">← Back</button>
+        
+        <div class="card p-3 mb-3">
+            <div class="d-flex justify-content-between">
+                <h2 id="detail-title" class="text-success fw-bold m-0">Project</h2>
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteCurrentProject()"><i class="bi bi-trash"></i></button>
+            </div>
+            <p id="detail-client" class="text-secondary small mb-2">Client</p>
+            
+            <div class="chart-container mb-2">
+                <canvas id="budgetChart"></canvas>
+            </div>
+            <div class="text-center">
+                <span class="fs-4 fw-bold" id="detail-remaining">$0</span>
+                <br><small class="text-secondary">Remaining of <span id="detail-budget">$0</span></small>
+            </div>
+        </div>
+
+        <div class="card p-3">
+            <h5 class="mb-3">Expenses</h5>
+            
+            <div class="input-group mb-3">
+                <input type="text" id="tx-desc" class="form-control" placeholder="Desc">
+                <select id="tx-category" class="form-select" style="max-width: 100px;">
+                   <option value="Mat">Mat</option><option value="Labor">Labor</option>
+                   <option value="Other">Other</option>
+                </select>
+            </div>
+            <div class="input-group mb-3">
+                <input type="number" id="tx-amount" class="form-control" placeholder="Amount">
+                <button class="btn btn-success" onclick="addTransaction()">Add</button>
+            </div>
+
+            <ul class="list-group list-group-flush" id="tx-list" style="max-height: 300px; overflow-y: auto;"></ul>
+        </div>
+    </div>
+
+    <script src="js/db.js"></script>
+    <script>
+        let currentProject = null;
+        let myChart = null;
+
+        // NAVIGATION
+        function showDashboard() {
+            document.getElementById('view-details').classList.remove('active-section');
+            document.getElementById('view-dashboard').classList.add('active-section');
+            fetchProjects();
+        }
+
+        async function showDetails(project) {
+            currentProject = project;
+            document.getElementById('view-dashboard').classList.remove('active-section');
+            document.getElementById('view-details').classList.add('active-section');
+            
+            document.getElementById('detail-title').innerText = project.name;
+            document.getElementById('detail-client').innerText = project.client;
+            document.getElementById('detail-budget').innerText = `$${project.budget.toLocaleString()}`;
+            
+            await loadTransactions(project.id);
+        }
+
+        // DATA LOGIC
+        async function fetchProjects() {
+            const projects = await api.getProjects();
+            const list = document.getElementById('project-list');
+            list.innerHTML = '';
+            projects.forEach(p => {
+                list.innerHTML += `
+                <div class="col-12" onclick='showDetails(${JSON.stringify(p)})'>
+                    <div class="card project-card bg-dark border-secondary p-3">
+                        <div class="d-flex justify-content-between">
+                            <h5 class="mb-1 text-light">${p.name}</h5>
+                            <span class="text-success fw-bold">$${p.budget.toLocaleString()}</span>
+                        </div>
+                        <small class="text-secondary">${p.status} • ${p.client}</small>
+                    </div>
+                </div>`;
+            });
+        }
+
+        async function addProject() {
+            const name = document.getElementById('in-name').value;
+            const budget = document.getElementById('in-budget').value;
+            if(!name || !budget) return;
+            await api.addProject(name, document.getElementById('in-client').value, document.getElementById('in-status').value, parseFloat(budget));
+            toggleAddForm(); fetchProjects();
+        }
+
+        async function loadTransactions(pid) {
+            const txs = await api.getTransactions(pid);
+            const list = document.getElementById('tx-list');
+            list.innerHTML = '';
+            let total = 0;
+            let cats = {};
+
+            txs.forEach(t => {
+                total += t.amount;
+                cats[t.category] = (cats[t.category] || 0) + t.amount;
+                list.innerHTML += `
+                <li class="list-group-item bg-transparent text-light d-flex justify-content-between align-items-center px-0">
+                    <div><span class="badge bg-secondary me-2">${t.category}</span>${t.description}</div>
+                    <span class="text-danger">-$${t.amount.toLocaleString()}</span>
+                </li>`;
+            });
+
+            // Update Remaining
+            const remaining = currentProject.budget - total;
+            const el = document.getElementById('detail-remaining');
+            el.innerText = `$${remaining.toLocaleString()}`;
+            el.className = remaining < 0 ? "fs-1 fw-bold text-danger" : "fs-1 fw-bold text-success";
+
+            updateChart(currentProject.budget - total, cats);
+        }
+
+        async function addTransaction() {
+            const desc = document.getElementById('tx-desc').value;
+            const amt = document.getElementById('tx-amount').value;
+            if(!desc || !amt) return;
+            await api.addTransaction(currentProject.id, desc, document.getElementById('tx-category').value, parseFloat(amt));
+            document.getElementById('tx-desc').value = '';
+            document.getElementById('tx-amount').value = '';
+            loadTransactions(currentProject.id);
+        }
+
+        async function deleteCurrentProject() {
+            if(confirm("Delete Project?")) { await api.deleteProject(currentProject.id); showDashboard(); }
+        }
+
+        function toggleAddForm() { document.getElementById('add-form-card').classList.toggle('d-none'); }
+
+        function updateChart(remaining, cats) {
+            const ctx = document.getElementById('budgetChart').getContext('2d');
+            if (myChart) myChart.destroy();
+            const labels = Object.keys(cats); const data = Object.values(cats);
+            labels.push("Remaining"); data.push(Math.max(0, remaining));
+            
+            myChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: { labels, datasets: [{ data, backgroundColor: ['#ff6384','#36a2eb','#ffce56','#4bc0c0'], borderWidth:0 }] },
+                options: { plugins: { legend: { position:'right', labels:{color:'white'} } }, responsive:true, maintainAspectRatio:false }
+            });
+        }
+
+        fetchProjects();
+    </script>
+</body>
+</html>

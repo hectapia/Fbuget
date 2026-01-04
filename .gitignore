@@ -1,0 +1,25 @@
+# --- Dependencies ---
+node_modules/
+package-lock.json
+
+# --- Android / Native Generated Files ---
+# Ignore the actual build outputs, but keep the project structure
+android/app/build/
+android/.gradle/
+android/app/src/main/assets/public/
+
+# --- Local Configuration (Crucial to ignore) ---
+# These contain paths specific to your machine (e.g., C:/Users/Hector/...)
+local.properties
+*.iml
+.idea/
+.vscode/
+
+# --- Capacitor ---
+# If you ever run a build command, ignore the output
+www/
+dist/
+
+# --- OS Generated Files ---
+.DS_Store
+Thumbs.db

@@ -178,12 +178,33 @@
             else addTransaction();
         }
 
+        // --- IMPROVED ADD TRANSACTION LOGIC ---
+
         async function addTransaction() {
             const desc = document.getElementById('tx-desc').value;
-            const amt = document.getElementById('tx-amount').value;
-            if(!desc || !amt) return;
+            const amtStr = document.getElementById('tx-amount').value;
             
-            await api.addTransaction(currentProject.id, desc, document.getElementById('tx-category').value, parseFloat(amt));
+            if(!desc || !amtStr) { alert("Please fill in all fields"); return; }
+            const newAmount = parseFloat(amtStr);
+
+            // 1. CALCULATE CURRENT SPENDING
+            const currentSpent = currentTransactionsList.reduce((sum, t) => sum + t.amount, 0);
+            
+            // 2. CHECK IF OVER BUDGET
+            if (currentSpent + newAmount > currentProject.budget) {
+                const remaining = currentProject.budget - currentSpent;
+                alert(`⚠️ Insufficient Budget!\n\nYou only have $${remaining.toLocaleString()} remaining.\nThis transaction would make the budget negative.`);
+                return; // Stop here. Do not save.
+            }
+
+            // 3. SAVE IF SAFE
+            await api.addTransaction(
+                currentProject.id, 
+                desc, 
+                document.getElementById('tx-category').value, 
+                newAmount
+            );
+            
             resetTxForm();
             loadTransactions(currentProject.id);
         }
@@ -205,16 +226,37 @@
             document.getElementById('btn-tx-cancel').classList.remove('d-none');
         }
 
+        // --- IMPROVED UPDATE TRANSACTION LOGIC ---        
+
         async function updateTransaction() {
             const desc = document.getElementById('tx-desc').value;
-            const amt = document.getElementById('tx-amount').value;
-            if(!desc || !amt) return;
+            const amtStr = document.getElementById('tx-amount').value;
+            
+            if(!desc || !amtStr) { alert("Please fill in all fields"); return; }
+            const newAmount = parseFloat(amtStr);
 
+            // 1. FIND OLD AMOUNT (To subtract it from the calculation)
+            const oldTx = currentTransactionsList.find(t => t.id === editingTxId);
+            if (!oldTx) return;
+
+            const currentSpent = currentTransactionsList.reduce((sum, t) => sum + t.amount, 0);
+            const projectedTotal = currentSpent - oldTx.amount + newAmount;
+
+            // 2. CHECK IF OVER BUDGET
+            if (projectedTotal > currentProject.budget) {
+                const remaining = currentProject.budget - currentSpent;
+                // Add back the old amount to show true remaining capability for this edit
+                const trueLimit = remaining + oldTx.amount; 
+                alert(`⚠️ Cannot Update!\n\nThis change exceeds the budget.\nMaximum allowed for this transaction is $${trueLimit.toLocaleString()}.`);
+                return; // Stop here.
+            }
+
+            // 3. UPDATE IF SAFE
             await api.updateTransaction(
                 editingTxId, 
                 desc, 
                 document.getElementById('tx-category').value, 
-                parseFloat(amt)
+                newAmount
             );
             
             resetTxForm();
@@ -244,10 +286,24 @@
         // --- PROJECT CRUD ---
         async function addProject() {
             const name = document.getElementById('in-name').value;
-            const budget = document.getElementById('in-budget').value;
-            if(!name || !budget) return;
-            await api.addProject(name, document.getElementById('in-client').value, document.getElementById('in-status').value, parseFloat(budget));
-            toggleAddForm(); fetchProjects();
+            const budgetStr = document.getElementById('in-budget').value;
+            
+            if(!name || !budgetStr) return;
+            // Prevent creating a project with a negative or zero budget to begin with
+            const budget = parseFloat(budgetStr);
+            if (budget <= 0) {
+                alert("Budget must be greater than $0");
+                return;
+            }
+
+            await api.addProject(
+                name, 
+                document.getElementById('in-client').value, 
+                document.getElementById('in-status').value, 
+                budget
+            );
+            toggleAddForm(); 
+            fetchProjects();
         }
 
         async function deleteCurrentProject() {

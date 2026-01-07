@@ -23,10 +23,12 @@ To run this app on your computer or an Android emulator, follow these steps.
 
 ### 1. Prerequisites
 * [Node.js](https://nodejs.org/) installed.
+* [Capacitor](https://capacitorjs.com/) installed.
 * [Android Studio](https://developer.android.com/studio) installed (for the emulator/compiling).
 
 ### 2. Installation
 Clone the project and install the JavaScript dependencies:
 ```bash
-cd Fbudget
-npm install
+npx cap sync
+npx cap open android
+```

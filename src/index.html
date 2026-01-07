@@ -60,28 +60,35 @@
         <div class="card p-3">
             <h5 class="mb-3">Expenses</h5>
             
-            <div class="input-group mb-3">
-                <input type="text" id="tx-desc" class="form-control" placeholder="Desc">
-                <select id="tx-category" class="form-select" style="max-width: 100px;">
-                   <option value="Mat">Mat</option><option value="Labor">Labor</option>
+            <div class="input-group mb-2">
+                <input type="text" id="tx-desc" class="form-control" placeholder="Description">
+                <select id="tx-category" class="form-select" style="max-width: 110px;">
+                   <option value="Materials">Materials</option>
+                   <option value="Labor">Labor</option>
+                   <option value="Logistics">Logistics</option>
+                   <option value="Equipment">Equipment</option>
                    <option value="Other">Other</option>
                 </select>
             </div>
             <div class="input-group mb-3">
                 <input type="number" id="tx-amount" class="form-control" placeholder="Amount">
-                <button class="btn btn-success" onclick="addTransaction()">Add</button>
+                <button id="btn-tx-action" class="btn btn-success" onclick="handleTransactionSubmit()">Add</button>
+                <button id="btn-tx-cancel" class="btn btn-outline-secondary d-none" onclick="resetTxForm()">✖</button>
             </div>
 
-            <ul class="list-group list-group-flush" id="tx-list" style="max-height: 300px; overflow-y: auto;"></ul>
+            <ul class="list-group list-group-flush" id="tx-list" style="max-height: 400px; overflow-y: auto;">
+                </ul>
         </div>
     </div>
 
     <script src="js/db.js"></script>
     <script>
         let currentProject = null;
+        let currentTransactionsList = []; // Store transactions to find them later
+        let editingTxId = null;
         let myChart = null;
 
-        // NAVIGATION
+        // --- NAVIGATION ---
         function showDashboard() {
             document.getElementById('view-details').classList.remove('active-section');
             document.getElementById('view-dashboard').classList.add('active-section');
@@ -97,10 +104,11 @@
             document.getElementById('detail-client').innerText = project.client;
             document.getElementById('detail-budget').innerText = `$${project.budget.toLocaleString()}`;
             
+            resetTxForm(); // Ensure inputs are clear
             await loadTransactions(project.id);
         }
 
-        // DATA LOGIC
+        // --- DATA & UI LOGIC ---
         async function fetchProjects() {
             const projects = await api.getProjects();
             const list = document.getElementById('project-list');
@@ -119,16 +127,10 @@
             });
         }
 
-        async function addProject() {
-            const name = document.getElementById('in-name').value;
-            const budget = document.getElementById('in-budget').value;
-            if(!name || !budget) return;
-            await api.addProject(name, document.getElementById('in-client').value, document.getElementById('in-status').value, parseFloat(budget));
-            toggleAddForm(); fetchProjects();
-        }
-
         async function loadTransactions(pid) {
             const txs = await api.getTransactions(pid);
+            currentTransactionsList = txs; // Save to global variable
+            
             const list = document.getElementById('tx-list');
             list.innerHTML = '';
             let total = 0;
@@ -137,14 +139,31 @@
             txs.forEach(t => {
                 total += t.amount;
                 cats[t.category] = (cats[t.category] || 0) + t.amount;
+                
+                // Determine Badge Color
+                let badgeClass = "bg-secondary";
+                if(t.category === "Materials") badgeClass = "bg-danger";
+                if(t.category === "Labor") badgeClass = "bg-primary";
+                if(t.category === "Logistics") badgeClass = "bg-warning text-dark";
+
+                // Add HTML with EDIT and DELETE buttons
                 list.innerHTML += `
-                <li class="list-group-item bg-transparent text-light d-flex justify-content-between align-items-center px-0">
-                    <div><span class="badge bg-secondary me-2">${t.category}</span>${t.description}</div>
-                    <span class="text-danger">-$${t.amount.toLocaleString()}</span>
+                <li class="list-group-item bg-transparent text-light px-0 py-2 border-secondary">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <div>
+                            <span class="badge ${badgeClass} me-1">${t.category}</span>
+                            <span class="fw-bold">${t.description}</span>
+                        </div>
+                        <span class="text-danger fw-bold">-$${t.amount.toLocaleString()}</span>
+                    </div>
+                    <div class="d-flex justify-content-end gap-2">
+                        <button class="btn btn-sm btn-outline-light py-0 px-2" style="font-size: 0.8rem;" onclick="startEditTx(${t.id})">Edit</button>
+                        <button class="btn btn-sm btn-outline-danger py-0 px-2" style="font-size: 0.8rem;" onclick="deleteTx(${t.id})">Delete</button>
+                    </div>
                 </li>`;
             });
 
-            // Update Remaining
+            // Update Remaining Budget Text
             const remaining = currentProject.budget - total;
             const el = document.getElementById('detail-remaining');
             el.innerText = `$${remaining.toLocaleString()}`;
@@ -153,14 +172,82 @@
             updateChart(currentProject.budget - total, cats);
         }
 
+        // --- TRANSACTION CRUD ---
+        function handleTransactionSubmit() {
+            if (editingTxId) updateTransaction();
+            else addTransaction();
+        }
+
         async function addTransaction() {
             const desc = document.getElementById('tx-desc').value;
             const amt = document.getElementById('tx-amount').value;
             if(!desc || !amt) return;
+            
             await api.addTransaction(currentProject.id, desc, document.getElementById('tx-category').value, parseFloat(amt));
+            resetTxForm();
+            loadTransactions(currentProject.id);
+        }
+
+        function startEditTx(id) {
+            const tx = currentTransactionsList.find(t => t.id === id);
+            if (!tx) return;
+
+            editingTxId = tx.id;
+            // Populate Inputs
+            document.getElementById('tx-desc').value = tx.description;
+            document.getElementById('tx-category').value = tx.category || "Other";
+            document.getElementById('tx-amount').value = tx.amount;
+            
+            // Switch Button State
+            const btn = document.getElementById('btn-tx-action');
+            btn.innerText = "Update";
+            btn.className = "btn btn-warning";
+            document.getElementById('btn-tx-cancel').classList.remove('d-none');
+        }
+
+        async function updateTransaction() {
+            const desc = document.getElementById('tx-desc').value;
+            const amt = document.getElementById('tx-amount').value;
+            if(!desc || !amt) return;
+
+            await api.updateTransaction(
+                editingTxId, 
+                desc, 
+                document.getElementById('tx-category').value, 
+                parseFloat(amt)
+            );
+            
+            resetTxForm();
+            loadTransactions(currentProject.id);
+        }
+
+        async function deleteTx(id) {
+            if(!confirm("Delete this expense?")) return;
+            await api.deleteTransaction(id);
+            // If we deleted the one we were editing, reset the form
+            if (editingTxId === id) resetTxForm();
+            loadTransactions(currentProject.id);
+        }
+
+        function resetTxForm() {
+            editingTxId = null;
             document.getElementById('tx-desc').value = '';
             document.getElementById('tx-amount').value = '';
-            loadTransactions(currentProject.id);
+            
+            // Reset Buttons
+            const btn = document.getElementById('btn-tx-action');
+            btn.innerText = "Add";
+            btn.className = "btn btn-success";
+            document.getElementById('btn-tx-cancel').classList.add('d-none');
+        }
+
+        // --- PROJECT CRUD ---
+        async function addProject() {
+            const name = document.getElementById('in-name').value;
+            const budget = document.getElementById('in-budget').value;
+            if(!name || !budget) return;
+            await api.addProject(name, document.getElementById('in-client').value, document.getElementById('in-status').value, parseFloat(budget));
+            toggleAddForm(); fetchProjects();
         }
 
         async function deleteCurrentProject() {
@@ -169,6 +256,7 @@
 
         function toggleAddForm() { document.getElementById('add-form-card').classList.toggle('d-none'); }
 
+        // --- CHART ---
         function updateChart(remaining, cats) {
             const ctx = document.getElementById('budgetChart').getContext('2d');
             if (myChart) myChart.destroy();
@@ -177,7 +265,7 @@
             
             myChart = new Chart(ctx, {
                 type: 'doughnut',
-                data: { labels, datasets: [{ data, backgroundColor: ['#ff6384','#36a2eb','#ffce56','#4bc0c0'], borderWidth:0 }] },
+                data: { labels, datasets: [{ data, backgroundColor: ['#ff6384','#36a2eb','#ffce56','#4bc0c0','#28a745'], borderWidth:0 }] },
                 options: { plugins: { legend: { position:'right', labels:{color:'white'} } }, responsive:true, maintainAspectRatio:false }
             });
         }
